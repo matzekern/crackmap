@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edit {{ crack }} – CrackMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f5f3ef; color: #2d2a26; }
+    header { height: 48px; display: flex; align-items: center; padding: 0 16px;
+             background: #2d2a26; font-weight: 600; }
+    header a { color: #fff; text-decoration: none; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    form p { margin: 0 0 12px; }
+    label { display: block; font-weight: 600; margin-bottom: 4px; }
+    input:not([type=file]):not([type=checkbox]), select, textarea {
+      width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+    .helptext { font-size: 12px; color: #6b655c; }
+    .errorlist { color: #b00020; padding-left: 16px; margin: 4px 0; }
+    #edit-map { height: 300px; border-radius: 6px; margin-bottom: 4px; }
+    .hint { font-size: 13px; color: #6b655c; margin: 0 0 16px; }
+    .actions { display: flex; gap: 12px; align-items: center; }
+    button { padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header><a href="{{ crack.get_absolute_url }}">← Back to crack</a></header>
+  <main>
+    <h1>Edit crack</h1>
+    <div id="edit-map"></div>
+    <p class="hint">Drag the pin to move it.</p>
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="actions">
+        <button type="submit">Save changes</button>
+        <a href="{{ crack.get_absolute_url }}">Cancel</a>
+      </div>
+    </form>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const latInput = document.querySelector("input[name=latitude]");
+    const lngInput = document.querySelector("input[name=longitude]");
+    const start = [parseFloat(latInput.value), parseFloat(lngInput.value)];
+
+    const editMap = L.map("edit-map").setView(start, 16);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    }).addTo(editMap);
+
+    // Dragging the pin writes the new position into the hidden form fields.
+    const marker = L.marker(start, { draggable: true }).addTo(editMap);
+    marker.on("dragend", () => {
+      const pos = marker.getLatLng().wrap();
+      latInput.value = pos.lat.toFixed(6);
+      lngInput.value = pos.lng.toFixed(6);
+    });
+  </script>
+</body>
+</html>

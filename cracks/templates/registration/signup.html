@@ -1,0 +1,12 @@
+{% extends "registration/base_auth.html" %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+  <h1>Create an account</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">Sign up</button>
+  </form>
+  <p class="switch">Already have an account? <a href="{% url 'login' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Log in</a></p>
+{% endblock %}

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrackMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+    header { height: 48px; display: flex; align-items: center; justify-content: space-between;
+             padding: 0 16px; background: #2d2a26; color: #fff; font-weight: 600; }
+    header a { color: #fff; font-weight: 400; font-size: 14px; }
+    .account { font-weight: 400; font-size: 14px; }
+    .account form { display: inline; }
+    .account button { background: none; border: 0; color: #fff; font: inherit; text-decoration: underline;
+                      cursor: pointer; padding: 0; }
+    #map { height: calc(100% - 48px); }
+
+    /* Pin popup */
+    .pin-popup { width: 200px; font-size: 13px; }
+    .pin-popup img { width: 100%; max-height: 150px; object-fit: cover; border-radius: 4px; margin-bottom: 6px; }
+    .pin-popup a { display: inline-block; margin-top: 6px; }
+
+    /* Add-crack form inside the map popup */
+    .add-form { width: 240px; max-height: 60vh; overflow-y: auto; font-size: 13px; }
+    .add-form p { margin: 0 0 8px; }
+    .add-form label { display: block; font-weight: 600; margin-bottom: 2px; }
+    .add-form input:not([type=file]), .add-form select, .add-form textarea {
+      width: 100%; box-sizing: border-box; padding: 4px; font: inherit; }
+    .add-form .errors { color: #b00020; white-space: pre-line; }
+    .add-form button { width: 100%; padding: 6px; font: inherit; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <span>CrackMap</span>
+    {% if user.is_authenticated %}
+      <span class="account">
+        Click the map to add a crack · Hi, {{ user.username }} ·
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}<button type="submit">Log out</button>
+        </form>
+      </span>
+    {% else %}
+      <span class="account">
+        <a href="{% url 'login' %}">Log in</a> · <a href="{% url 'signup' %}">Sign up</a> to add cracks
+      </span>
+    {% endif %}
+  </header>
+  <div id="map"></div>
+  {{ pins|json_script:"pins-data" }}
+
+  {% if user.is_authenticated %}
+  <!-- Rendered by Django, copied into a popup by JavaScript on each map click. -->
+  <template id="add-form-template">
+    <form class="add-form" method="post" action="{% url 'cracks:add' %}" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <p class="errors"></p>
+      <button type="submit">Save crack</button>
+    </form>
+  </template>
+  {% endif %}
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // World view; zoom in by scrolling.
+    const map = L.map("map").setView([30, 0], 2);
+
+    // Base maps. These free tile servers are fine for development;
+    // check each provider's usage terms (or switch provider) before launch.
+    const osmAttribution =
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+    const baseMaps = {
+      "Street": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: osmAttribution,
+      }),
+      "Topographic": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+        maxZoom: 17,
+        attribution: osmAttribution +
+          ', SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+      }),
+      "Satellite": L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+      }),
+    };
+
+    baseMaps["Topographic"].addTo(map);  // default view
+    L.control.layers(baseMaps).addTo(map);  // switcher, top right
+
+    function addPin(pin) {
+      // Build the popup with DOM elements and textContent, never innerHTML,
+      // so text typed by users can't inject HTML.
+      const content = document.createElement("div");
+      content.className = "pin-popup";
+      const marker = L.marker([pin.lat, pin.lng]);
+
+      if (pin.photo) {
+        const img = document.createElement("img");
+        img.src = pin.photo;
+        img.alt = pin.title;
+        img.addEventListener("load", () => marker.getPopup().update());  // resize popup to fit
+        content.append(img);
+      }
+      const title = document.createElement("strong");
+      title.textContent = pin.title;
+      const details = document.createElement("div");
+      details.textContent = [pin.width, pin.grade, pin.o_grade && `O-grade ${pin.o_grade}`]
+        .filter(Boolean).join(" · ");
+      const link = document.createElement("a");
+      link.href = pin.url;
+      link.textContent = "Details →";
+      content.append(title, details, link);
+
+      marker.bindPopup(content).addTo(map);
+    }
+
+    // Pin data comes from Django as safe JSON (json_script escapes it).
+    JSON.parse(document.getElementById("pins-data").textContent).forEach(addPin);
+
+    const formTemplate = document.getElementById("add-form-template");
+    if (formTemplate) {  // only present for signed-in users
+      map.on("click", (event) => {
+        const form = formTemplate.content.firstElementChild.cloneNode(true);
+        form.elements.latitude.value = event.latlng.lat.toFixed(6);
+        form.elements.longitude.value = event.latlng.wrap().lng.toFixed(6);  // keep within -180..180
+
+        const popup = L.popup({ maxWidth: 280 })
+          .setLatLng(event.latlng)
+          .setContent(form)
+          .openOn(map);
+
+        form.addEventListener("submit", (e) => submitCrack(e, form, popup));
+      });
+    }
+
+    async function submitCrack(event, form, popup) {
+      event.preventDefault();  // send in the background instead of loading a new page
+      const button = form.querySelector("button");
+      const errorBox = form.querySelector(".errors");
+      button.disabled = true;
+      button.textContent = "Saving…";
+      errorBox.textContent = "";
+
+      try {
+        const response = await fetch(form.action, { method: "POST", body: new FormData(form) });
+        const data = await response.json();
+        if (response.ok) {
+          addPin(data.pin);
+          map.closePopup(popup);
+          return;
+        }
+        // Show validation errors, e.g. "width: This field is required."
+        errorBox.textContent = Object.entries(data.errors)
+          .map(([field, messages]) => `${field}: ${messages.join(" ")}`)
+          .join("\n");
+      } catch {
+        errorBox.textContent = "Could not save. Are you still signed in and online?";
+      }
+      button.disabled = false;
+      button.textContent = "Save crack";
+    }
+  </script>
+</body>
+</html>

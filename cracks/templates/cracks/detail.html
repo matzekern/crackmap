@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ crack }} – CrackMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f5f3ef; color: #2d2a26; }
+    header { height: 48px; display: flex; align-items: center; padding: 0 16px;
+             background: #2d2a26; font-weight: 600; }
+    header a { color: #fff; text-decoration: none; }
+    main { max-width: 760px; margin: 0 auto; padding: 16px; }
+    h1 { margin: 8px 0 16px; }
+    .photo { width: 100%; max-height: 520px; object-fit: contain; background: #000; border-radius: 6px; }
+    .no-photo { padding: 32px; text-align: center; background: #e6e2da; border-radius: 6px; color: #6b655c; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 20px 0; }
+    dt { font-weight: 600; }
+    dd { margin: 0; white-space: pre-line; }
+    .access-open { color: #1b7f3b; }
+    .access-restricted { color: #a15c00; }
+    .access-closed { color: #b00020; font-weight: 600; }
+    #mini-map { height: 260px; border-radius: 6px; }
+    .meta { color: #6b655c; font-size: 13px; margin-top: 16px; }
+
+    /* Edit / delete controls */
+    .owner-actions { display: flex; gap: 12px; align-items: center; font-size: 14px; margin-top: 8px; }
+    .owner-actions form { display: inline; margin: 0; }
+    .link-button { background: none; border: 0; padding: 0; font: inherit; color: #b00020;
+                   text-decoration: underline; cursor: pointer; }
+
+    /* Comments */
+    #comments { margin-top: 32px; }
+    .comment { background: #fff; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+    .comment-head { font-size: 13px; color: #6b655c; margin-bottom: 4px; }
+    .comment-head strong { color: #2d2a26; }
+    .comment-text { white-space: pre-line; overflow-wrap: anywhere; }
+    .comment-form textarea { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
+    .comment-form button { margin-top: 6px; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header><a href="{% url 'cracks:map' %}">← CrackMap</a></header>
+  <main>
+    <h1>{{ crack }}</h1>
+
+    {% if crack.photo %}
+      <img class="photo" src="{{ crack.photo.url }}" alt="Photo of {{ crack }}">
+    {% else %}
+      <div class="no-photo">No photo yet</div>
+    {% endif %}
+
+    <dl>
+      <dt>Width</dt><dd>{{ crack.get_width_display }}</dd>
+      {% if crack.grade %}<dt>Grade</dt><dd>{{ crack.grade }}</dd>{% endif %}
+      {% if crack.o_grade %}<dt>O-grade</dt><dd>{{ crack.o_grade }}</dd>{% endif %}
+      {% if crack.length_m %}<dt>Length</dt><dd>{{ crack.length_m }} m</dd>{% endif %}
+      {% if crack.rock_type %}<dt>Rock</dt><dd>{{ crack.rock_type }}</dd>{% endif %}
+      <dt>Access</dt>
+      <dd class="access-{{ crack.access_status }}">{{ crack.get_access_status_display }}</dd>
+      {% if crack.access_notes %}<dt>Access notes</dt><dd>{{ crack.access_notes }}</dd>{% endif %}
+      {# urlize escapes the text and turns web addresses into links (with rel="nofollow") #}
+      {% if crack.info_source %}<dt>More info</dt><dd>{{ crack.info_source|urlize }}</dd>{% endif %}
+      <dt>Coordinates</dt>
+      <dd>
+        {{ crack.latitude }}, {{ crack.longitude }}
+        · <a href="https://www.google.com/maps/search/?api=1&query={{ crack.latitude }},{{ crack.longitude }}"
+             target="_blank" rel="noopener">Open in Google Maps</a>
+      </dd>
+    </dl>
+
+    <div id="mini-map"></div>
+
+    <p class="meta">
+      Added {{ crack.created_at|date:"j M Y" }}{% if crack.created_by %} by {{ crack.created_by.username }}{% endif %}
+    </p>
+    {% if user.is_staff or user == crack.created_by %}
+      <div class="owner-actions">
+        <a href="{% url 'cracks:edit' crack.pk %}">Edit crack</a>
+        <form method="post" action="{% url 'cracks:delete' crack.pk %}"
+              onsubmit="return confirm('Delete this crack and all its comments? This cannot be undone.');">
+          {% csrf_token %}<button type="submit" class="link-button">Delete crack</button>
+        </form>
+      </div>
+    {% endif %}
+
+    <section id="comments">
+      <h2>Comments ({{ comments|length }})</h2>
+      {% for comment in comments %}
+        <div class="comment">
+          <div class="comment-head">
+            <strong>{{ comment.author.username }}</strong> · {{ comment.created_at|date:"j M Y, H:i" }}
+          </div>
+          <div class="comment-text">{{ comment.text }}</div>
+          {% if user.is_staff or user == comment.author %}
+            <div class="owner-actions">
+              <a href="{% url 'cracks:edit_comment' comment.pk %}">Edit</a>
+              <form method="post" action="{% url 'cracks:delete_comment' comment.pk %}"
+                    onsubmit="return confirm('Delete this comment?');">
+                {% csrf_token %}<button type="submit" class="link-button">Delete</button>
+              </form>
+            </div>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p>No comments yet.</p>
+      {% endfor %}
+
+      {% if user.is_authenticated %}
+        <form class="comment-form" method="post" action="{% url 'cracks:add_comment' crack.pk %}">
+          {% csrf_token %}
+          {{ comment_form.text }}
+          <button type="submit">Post comment</button>
+        </form>
+      {% else %}
+        <p><a href="{% url 'login' %}?next={{ request.path|urlencode }}">Log in</a> or
+           <a href="{% url 'signup' %}?next={{ request.path|urlencode }}">sign up</a> to comment.</p>
+      {% endif %}
+    </section>
+  </main>
+
+  {# Coordinates as JSON so JavaScript gets plain numbers, independent of locale formatting. #}
+  {{ crack_location|json_script:"crack-location" }}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const loc = JSON.parse(document.getElementById("crack-location").textContent);
+    const miniMap = L.map("mini-map").setView([loc.lat, loc.lng], 15);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19,
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    }).addTo(miniMap);
+    L.marker([loc.lat, loc.lng]).addTo(miniMap);
+  </script>
+</body>
+</html>
