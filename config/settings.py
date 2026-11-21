@@ -152,3 +152,6 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True   # cookies only over HTTPS
     CSRF_COOKIE_SECURE = True
     CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS]
+
+# collectstatic copies CSS/JS here for the web server
+STATIC_ROOT = BASE_DIR / "staticfiles"
